@@ -140,26 +140,32 @@ const CheckoutForm = ({ clientSecret, onSuccess, onCancel, totalAmount, carritoI
         console.log("✅ Marcando nota de venta como pagada");
         await marcarNotaDeVentaPagada(notaVenta.id);
 
-        // 4. Registrar en el historial de ventas
+        // 4. Recargar la nota de venta actualizada para obtener el estado "pagada"
+        console.log("🔄 Recargando nota de venta actualizada");
+        const { getNotaDeVenta } = await import("../../api/notaDeVentaApi.jsx");
+        const notaVentaActualizada = await getNotaDeVenta(notaVenta.id);
+        console.log("✅ Nota de venta actualizada:", notaVentaActualizada);
+
+        // 5. Registrar en el historial de ventas
         console.log("📊 Registrando en historial de ventas");
         await crearDesdeNotaDeVenta(notaVenta.id);
         console.log("✅ Registro histórico creado");
 
-        // 5. Navegar a la página de éxito con la información completa
+        // 6. Navegar a la página de éxito con la información completa actualizada
         navigate("/pago/success", {
           state: {
-            notaVenta: notaVenta,
+            notaVenta: notaVentaActualizada,
             pagoInfo: {
-              orden: notaVenta.numero_comprobante,
-              notaVentaId: notaVenta.id,
-              monto: notaVenta.total,
-              subtotal: notaVenta.subtotal,
+              orden: notaVentaActualizada.numero_comprobante,
+              notaVentaId: notaVentaActualizada.id,
+              monto: notaVentaActualizada.total,
+              subtotal: notaVentaActualizada.subtotal,
               metodo: "Stripe",
-              estado: "Completado",
+              estado: notaVentaActualizada.estado, // Ahora será "pagada"
               paymentIntentId: paymentIntentId,
               fecha: new Date().toISOString(),
-              cliente: notaVenta.cliente_nombre + " " + notaVenta.cliente_apellido,
-              detalles: notaVenta.detalles
+              cliente: notaVentaActualizada.cliente_nombre + " " + notaVentaActualizada.cliente_apellido,
+              detalles: notaVentaActualizada.detalles
             }
           }
         });

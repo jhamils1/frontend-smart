@@ -80,8 +80,12 @@ const PagoSuccessPage = () => {
                 </div>
                 <div>
                   <span className="text-gray-600 font-medium text-sm">Estado:</span>
-                  <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-green-100 text-green-800">
-                    ✓ Completado
+                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${
+                    notaVenta?.estado === 'pagada' || pagoInfo.estado === 'Completado' || pagoInfo.estado === 'pagada'
+                      ? 'bg-green-100 text-green-800'
+                      : 'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {notaVenta?.estado === 'pagada' || pagoInfo.estado === 'Completado' || pagoInfo.estado === 'pagada' ? '✓ Aprobado' : '⏳ Pendiente'}
                   </span>
                 </div>
               </div>
