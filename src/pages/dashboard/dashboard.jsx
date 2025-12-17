@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/sidebar.jsx";
 import {
-  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
+  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, ComposedChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 import {
@@ -11,6 +11,11 @@ import {
   getProductosRanking,
   getResumenGeneral
 } from "../../api/dashboardApi.jsx";
+import {
+  getVentasFuturas,
+  getTendencias,
+  getProductosDemandados
+} from "../../api/prediccionApi.jsx";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -28,10 +33,19 @@ const Dashboard = () => {
   const [tipoClientes, setTipoClientes] = useState('top');
   const [tipoProductos, setTipoProductos] = useState('top');
   
+  // Estados para predicciones
+  const [prediccionesVentas, setPrediccionesVentas] = useState(null);
+  const [tendencias, setTendencias] = useState(null);
+  const [productosDemandados, setProductosDemandados] = useState([]);
+  const [mesesPrediccion, setMesesPrediccion] = useState(6);
+  
   // Estados de carga individuales para cada gráfico
   const [loadingVentas, setLoadingVentas] = useState(false);
   const [loadingClientes, setLoadingClientes] = useState(false);
   const [loadingProductos, setLoadingProductos] = useState(false);
+  const [loadingPredicciones, setLoadingPredicciones] = useState(false);
+  const [loadingTendencias, setLoadingTendencias] = useState(false);
+  const [loadingDemanda, setLoadingDemanda] = useState(false);
 
   // Cargar datos iniciales al montar el componente
   useEffect(() => {
@@ -59,23 +73,36 @@ const Dashboard = () => {
     }
   }, [tipoProductos]);
 
+  // Cargar predicciones cuando cambia los meses
+  useEffect(() => {
+    if (!loading) {
+      cargarPredicciones();
+    }
+  }, [mesesPrediccion]);
+
   const cargarDatosIniciales = async () => {
     setLoading(true);
     try {
       // Cargar todos los datos en paralelo solo al inicio
-      const [resumen, ventas, clientes, productos] = await Promise.all([
+      const [resumen, ventas, clientes, productos, predicciones, tendenciasData, demanda] = await Promise.all([
         getResumenGeneral(),
         getVentasHistoricas(periodoVentas),
         getClientesRanking(tipoClientes, 5),
-        getProductosRanking(tipoProductos, 5)
+        getProductosRanking(tipoProductos, 5),
+        getVentasFuturas(mesesPrediccion).catch(() => null),
+        getTendencias().catch(() => null),
+        getProductosDemandados(5).catch(() => null)
       ]);
 
-      console.log('📊 Datos iniciales del Dashboard:', { resumen, ventas, clientes, productos });
+      console.log('📊 Datos iniciales del Dashboard:', { resumen, ventas, clientes, productos, predicciones, tendenciasData, demanda });
 
       setResumenGeneral(resumen || null);
       setVentasHistoricas(ventas?.datos || []);
       setClientesRanking(clientes?.datos || []);
       setProductosRanking(productos?.datos || []);
+      setPrediccionesVentas(predicciones || null);
+      setTendencias(tendenciasData || null);
+      setProductosDemandados(demanda?.productos_alta_demanda || []);
     } catch (error) {
       console.error('❌ Error al cargar datos del dashboard:', error);
       setResumenGeneral(null);
@@ -126,6 +153,20 @@ const Dashboard = () => {
       setProductosRanking([]);
     } finally {
       setLoadingProductos(false);
+    }
+  };
+
+  const cargarPredicciones = async () => {
+    setLoadingPredicciones(true);
+    try {
+      const predicciones = await getVentasFuturas(mesesPrediccion);
+      console.log('🔮 Predicciones actualizadas:', predicciones);
+      setPrediccionesVentas(predicciones || null);
+    } catch (error) {
+      console.error('❌ Error al cargar predicciones:', error);
+      setPrediccionesVentas(null);
+    } finally {
+      setLoadingPredicciones(false);
     }
   };
 
@@ -294,6 +335,251 @@ const Dashboard = () => {
                 <div className="text-center text-gray-500">
                   <p className="text-lg font-medium">No hay datos de ventas históricas</p>
                   <p className="text-sm">Los datos aparecerán cuando haya ventas registradas</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Predicciones de Ventas con IA */}
+          {prediccionesVentas && (
+            <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                    <span>🔮</span> Predicciones de Ventas (IA - Random Forest)
+                    {loadingPredicciones && <span className="text-sm text-blue-500 ml-2">Cargando...</span>}
+                  </h3>
+                  {prediccionesVentas.cerebro_info && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Modelo: {prediccionesVentas.cerebro_info.tipo} | Entrenado: {prediccionesVentas.cerebro_info.fecha_entrenamiento}
+                    </p>
+                  )}
+                </div>
+                <select
+                  value={mesesPrediccion}
+                  onChange={(e) => setMesesPrediccion(Number(e.target.value))}
+                  className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  disabled={loadingPredicciones}
+                >
+                  <option value={3}>3 meses</option>
+                  <option value={6}>6 meses</option>
+                  <option value={12}>12 meses</option>
+                </select>
+              </div>
+              {loadingPredicciones ? (
+                <div className="h-[300px] flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
+                </div>
+              ) : (
+                <>
+                  <ResponsiveContainer width="100%" height={350}>
+                    <ComposedChart data={[
+                      ...(prediccionesVentas.historico || []),
+                      ...(prediccionesVentas.predicciones || [])
+                    ]}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis 
+                        dataKey={(item) => item.mes || item.mes_nombre} 
+                        angle={-45} 
+                        textAnchor="end" 
+                        height={100}
+                        style={{ fontSize: '12px' }}
+                      />
+                      <YAxis yAxisId="left" />
+                      <YAxis yAxisId="right" orientation="right" />
+                      <Tooltip
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            const data = payload[0].payload;
+                            return (
+                              <div className="bg-white p-3 border border-gray-300 rounded shadow-lg">
+                                <p className="font-semibold text-sm">{data.mes || data.mes_nombre}</p>
+                                {data.ventas !== undefined && (
+                                  <p className="text-blue-600 text-sm">Ventas: {data.ventas}</p>
+                                )}
+                                {data.ventas_predichas !== undefined && (
+                                  <p className="text-purple-600 text-sm">
+                                    Predicción: {data.ventas_predichas}
+                                    {data.confianza && <span className="ml-1 text-xs">({data.confianza})</span>}
+                                  </p>
+                                )}
+                                {data.ingresos !== undefined && (
+                                  <p className="text-green-600 text-sm">Ingresos: {formatCurrency(data.ingresos)}</p>
+                                )}
+                                {data.ingresos_predichos !== undefined && (
+                                  <p className="text-orange-600 text-sm">
+                                    Ingresos Pred.: {formatCurrency(data.ingresos_predichos)}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Legend />
+                      
+                      {/* Datos históricos */}
+                      <Area 
+                        yAxisId="left"
+                        type="monotone" 
+                        dataKey="ventas" 
+                        name="Ventas Históricas" 
+                        fill="#3b82f680" 
+                        stroke="#3b82f6" 
+                        strokeWidth={2}
+                        dot={{ r: 3 }}
+                      />
+                      <Line
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="ingresos"
+                        name="Ingresos Históricos"
+                        stroke="#10b981"
+                        strokeWidth={2}
+                        dot={{ r: 3 }}
+                      />
+                      
+                      {/* Predicciones */}
+                      <Line
+                        yAxisId="left"
+                        type="monotone"
+                        dataKey="ventas_predichas"
+                        name="Predicción Ventas (IA)"
+                        stroke="#8b5cf6"
+                        strokeWidth={3}
+                        strokeDasharray="5 5"
+                        dot={{ r: 5, fill: '#8b5cf6', strokeWidth: 2 }}
+                      />
+                      <Line
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="ingresos_predichos"
+                        name="Predicción Ingresos (IA)"
+                        stroke="#f59e0b"
+                        strokeWidth={3}
+                        strokeDasharray="5 5"
+                        dot={{ r: 5, fill: '#f59e0b', strokeWidth: 2 }}
+                      />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                  
+                  {/* Resumen de predicciones */}
+                  {prediccionesVentas.predicciones && prediccionesVentas.predicciones.length > 0 && (
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="bg-purple-50 p-3 rounded-lg border border-purple-200">
+                        <p className="text-xs text-purple-600 font-semibold">Próximo Mes</p>
+                        <p className="text-lg font-bold text-purple-900">
+                          {prediccionesVentas.predicciones[0].ventas_predichas} ventas
+                        </p>
+                        <p className="text-xs text-purple-700">
+                          {formatCurrency(prediccionesVentas.predicciones[0].ingresos_predichos)}
+                        </p>
+                      </div>
+                      <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                        <p className="text-xs text-blue-600 font-semibold">Promedio Predicho</p>
+                        <p className="text-lg font-bold text-blue-900">
+                          {Math.round(prediccionesVentas.predicciones.reduce((acc, p) => acc + p.ventas_predichas, 0) / prediccionesVentas.predicciones.length)} ventas/mes
+                        </p>
+                      </div>
+                      <div className="bg-green-50 p-3 rounded-lg border border-green-200">
+                        <p className="text-xs text-green-600 font-semibold">Ingresos Totales Estimados</p>
+                        <p className="text-lg font-bold text-green-900">
+                          {formatCurrency(prediccionesVentas.predicciones.reduce((acc, p) => acc + p.ingresos_predichos, 0))}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Tendencias y Productos Demandados */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            {/* Tendencias de Productos */}
+            {tendencias && (
+              <div className="bg-white rounded-lg shadow-lg p-6">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <span>📊</span> Tendencias de Productos
+                </h3>
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-green-700 mb-2 flex items-center gap-1">
+                      <span>📈</span> En Alza ({tendencias.productos_en_alza?.length || 0})
+                    </h4>
+                    <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                      {tendencias.productos_en_alza?.slice(0, 5).map((producto, idx) => (
+                        <div key={idx} className="bg-green-50 p-2 rounded flex justify-between items-center">
+                          <div>
+                            <p className="text-sm font-medium text-gray-800">{producto.nombre}</p>
+                            <p className="text-xs text-gray-600">{producto.codigo}</p>
+                          </div>
+                          <span className="text-green-600 font-bold">+{producto.cambio_porcentual}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-red-700 mb-2 flex items-center gap-1">
+                      <span>📉</span> En Baja ({tendencias.productos_en_baja?.length || 0})
+                    </h4>
+                    <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                      {tendencias.productos_en_baja?.slice(0, 5).map((producto, idx) => (
+                        <div key={idx} className="bg-red-50 p-2 rounded flex justify-between items-center">
+                          <div>
+                            <p className="text-sm font-medium text-gray-800">{producto.nombre}</p>
+                            <p className="text-xs text-gray-600">{producto.codigo}</p>
+                          </div>
+                          <span className="text-red-600 font-bold">{producto.cambio_porcentual}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Productos Alta Demanda */}
+            {productosDemandados.length > 0 && (
+              <div className="bg-white rounded-lg shadow-lg p-6">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <span>🎯</span> Alta Demanda Predicha
+                </h3>
+                <div className="space-y-3 max-h-[450px] overflow-y-auto">
+                  {productosDemandados.map((producto, idx) => (
+                    <div key={idx} className="border-l-4 border-purple-500 bg-purple-50 p-3 rounded">
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-gray-800">{producto.nombre}</p>
+                          <p className="text-xs text-gray-600">{producto.codigo}</p>
+                        </div>
+                        <span className="bg-purple-100 text-purple-800 text-xs font-bold px-2 py-1 rounded">
+                          Score: {producto.score_prioridad}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <p className="text-gray-600">Stock actual:</p>
+                          <p className="font-semibold">{producto.stock_actual}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-600">Demanda 90d:</p>
+                          <p className="font-semibold">{producto.demanda_predicha_90dias}</p>
+                        </div>
+                      </div>
+                      {producto.recomendacion && (
+                        <div className={`mt-2 p-2 rounded text-xs ${
+                          producto.recomendacion.nivel === 'urgente' ? 'bg-red-100 text-red-800' :
+                          producto.recomendacion.nivel === 'moderado' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-green-100 text-green-800'
+                        }`}>
+                          <p className="font-semibold">{producto.recomendacion.mensaje}</p>
+                          <p>Sugerido: {producto.recomendacion.cantidad_sugerida} unidades</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
